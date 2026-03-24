@@ -18,8 +18,11 @@ def test_triton_multi_config():
     device = torch.device('cuda')
     
     configs = [
+        (1, 8, 128, 128, 32, 0),
+        (1, 8, 128, 128, 32, 16),
         (1, 8, 128, 128, 64, 0),
         (1, 8, 128, 128, 64, 32),
+        (2, 4, 31, 77, 32, 16),
         (2, 4, 256, 256, 128, 64),
     ]
     
@@ -84,10 +87,10 @@ def test_triton_non_contiguous():
     
     assert torch.allclose(dq_ref, q_nc.grad, rtol = 1e-3, atol = 1e-4)
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason = 'CUDA not available')
-def test_triton_dfreqs():
+@pytest.mark.parametrize('seq_q,seq_k', [(64, 64), (31, 77)])
+def test_triton_dfreqs(seq_q, seq_k):
     device = torch.device('cuda')
-    batch, heads, seq_q, seq_k, dim, rotate_dim = 1, 2, 64, 64, 32, 16
+    batch, heads, dim, rotate_dim = 1, 2, 32, 16
     
     q = torch.randn(batch, heads, seq_q, dim, device = device, requires_grad = True)
     k = torch.randn(batch, heads, seq_k, dim, device = device, requires_grad = True)

@@ -10,14 +10,15 @@ def exists(v):
 @pytest.mark.skipif(not torch.cuda.is_available(), reason = 'CUDA must be available')
 @pytest.mark.parametrize('dtype', [torch.float16, torch.bfloat16, torch.float32])
 @pytest.mark.parametrize('causal', [True, False])
-@pytest.mark.parametrize('seq_len_q', [1, 256])
+@pytest.mark.parametrize('seq_len_q', [1, 31, 77, 256])
 @pytest.mark.parametrize('has_mask', [True, False])
-def test_fused_vs_manual(dtype, causal, seq_len_q, has_mask):
+@pytest.mark.parametrize('dim', [32, 64, 128])
+def test_fused_vs_manual(dtype, causal, seq_len_q, has_mask, dim):
     device = 'cuda'
     
-    batch, heads, dim = 2, 4, 64
+    batch, heads = 2, 4
     seq_len_k = 256
-    rotate_dim = 32
+    rotate_dim = min(32, dim)
     
     torch.manual_seed(42)
     
@@ -77,10 +78,11 @@ def test_fused_vs_manual(dtype, causal, seq_len_q, has_mask):
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason = 'CUDA must be available')
 @pytest.mark.parametrize('seq_len_q', [1, 1024])
-def test_compute_attn_similarity(seq_len_q):
+@pytest.mark.parametrize('dim', [32, 64, 128])
+def test_compute_attn_similarity(seq_len_q, dim):
     device = 'cuda'
-    batch, heads, seq_len_k, dim = 1, 8, 1024, 64
-    rotate_dim = 32
+    batch, heads, seq_len_k = 1, 8, 1024
+    rotate_dim = min(32, dim)
 
     q = torch.randn(batch, seq_len_q, heads, dim, device = device)
     k = torch.randn(batch, seq_len_k, heads, dim, device = device)
