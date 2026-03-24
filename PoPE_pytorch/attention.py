@@ -123,6 +123,8 @@ def flash_attn_with_pope(
     # ensure dtypes match for SDPA (apply_pope_to_qk might have upcasted to float32)
 
     v_dtype = v.dtype
+    v_dim = v.shape[-1]
+
     if q.dtype != v.dtype:
         v = v.to(q.dtype)
 
@@ -136,6 +138,13 @@ def flash_attn_with_pope(
         is_causal = causal,
         scale = softmax_scale
     )
+
+    # mps sdpa bug (pytorch 2.9.1) - output takes q/k dim instead of v dim
+    # first v_dim elements are correct, so slicing suffices
+    # only triggers in no_grad (inference). todo - remove once fixed upstream
+
+    if out.shape[-1] != v_dim:
+        out = out[..., :v_dim]
 
     out = out.to(v_dtype)
 
