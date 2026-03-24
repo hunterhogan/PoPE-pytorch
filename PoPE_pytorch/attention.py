@@ -36,7 +36,7 @@ def compute_attn_similarity_non_fused(
     if not head_dimension_at_first:
         q = rearrange(q, 'b n h d -> b h n d')
         k = rearrange(k, 'b n h d -> b h n d')
-    
+
     q, k = apply_pope_to_qk(pope, q, k, to_magnitude = F.softplus)
 
     # group query attention support
@@ -112,7 +112,7 @@ def flash_attn_with_pope(
         v = rearrange(v, 'b n h d -> b h n d')
 
     q, k = apply_pope_to_qk(pos_emb, q, k, to_magnitude = F.softplus)
-    
+
     # group query attention support
 
     groups = q.shape[1] // k.shape[1]

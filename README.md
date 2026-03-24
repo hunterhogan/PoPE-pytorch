@@ -38,7 +38,7 @@ rotated_q, rotated_k = pope.apply_pope_to_qk(pos_emb, q, k)
 rotated_q, rotated_k = pope.apply_pope_to_qk(pos_emb, q[..., -1:, :], k)
 ```
 
-### Axial PoPE 
+### Axial PoPE
 
 For images, video, etc. where multiple dimensions are needed, you can use `AxialPoPE`. The feature dimension will be split across these axial dimensions.
 
@@ -134,12 +134,12 @@ assert out.shape == (2, 8, 1024, 64)
 
 ```bibtex
 @misc{gopalakrishnan2025decouplingwhatwherepolar,
-    title   = {Decoupling the "What" and "Where" With Polar Coordinate Positional Embeddings}, 
+    title   = {Decoupling the "What" and "Where" With Polar Coordinate Positional Embeddings},
     author  = {Anand Gopalakrishnan and Robert Csordás and Jürgen Schmidhuber and Michael C. Mozer},
     year    = {2025},
     eprint  = {2509.10534},
     archivePrefix = {arXiv},
     primaryClass = {cs.LG},
-    url     = {https://arxiv.org/abs/2509.10534}, 
+    url     = {https://arxiv.org/abs/2509.10534},
 }
 ```

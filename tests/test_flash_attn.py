@@ -15,20 +15,20 @@ def exists(v):
 @pytest.mark.parametrize('dim', [32, 64, 128])
 def test_fused_vs_manual(dtype, causal, seq_len_q, has_mask, dim):
     device = 'cuda'
-    
+
     batch, heads = 2, 4
     seq_len_k = 256
     rotate_dim = min(32, dim)
-    
+
     torch.manual_seed(42)
-    
+
     q = torch.randn(batch, seq_len_q, heads, dim, device = device, dtype = dtype, requires_grad = True)
     k = torch.randn(batch, seq_len_k, heads, dim, device = device, dtype = dtype, requires_grad = True)
     v = torch.randn(batch, seq_len_k, heads, dim, device = device, dtype = dtype, requires_grad = True)
-    
+
     pope_module = PoPE(rotate_dim, heads = heads).to(device)
     pope = pope_module(seq_len_k)
-    
+
     do = torch.randn(batch, seq_len_q, heads, dim, device = device, dtype = dtype)
 
     key_pad_mask = None
@@ -39,17 +39,17 @@ def test_fused_vs_manual(dtype, causal, seq_len_q, has_mask, dim):
     # 1. Manual Path
     qc1, kc1, vc1 = q.clone().detach().requires_grad_(True), k.clone().detach().requires_grad_(True), v.clone().detach().requires_grad_(True)
     pc1 = [t.clone().detach().requires_grad_(True) for t in pope]
-    
+
     out_manual = flash_attn_with_pope(qc1, kc1, vc1, pos_emb = pc1, mask = key_pad_mask, causal = causal, fused = False, head_dimension_at_first = False)
     out_manual.backward(do)
-    
+
     # 2. Fused Path
     qc2, kc2, vc2 = q.clone().detach().requires_grad_(True), k.clone().detach().requires_grad_(True), v.clone().detach().requires_grad_(True)
     pc2 = [t.clone().detach().requires_grad_(True) for t in pope]
-    
+
     out_fused = flash_attn_with_pope(qc2, kc2, vc2, pos_emb = pc2, mask = key_pad_mask, causal = causal, fused = True, head_dimension_at_first = False)
     out_fused.backward(do)
-    
+
     # check parity
     def get_max_diff(a, b):
         return (a - b).abs().max().item()
@@ -58,16 +58,16 @@ def test_fused_vs_manual(dtype, causal, seq_len_q, has_mask, dim):
     diff_dq = get_max_diff(qc1.grad, qc2.grad)
     diff_dk = get_max_diff(kc1.grad, kc2.grad)
     diff_dv = get_max_diff(vc1.grad, vc2.grad)
-    
+
     print(f"\n[{dtype}, causal={causal}] Out Diff: {diff_out:.6f}, dQ Diff: {diff_dq:.6f}, dK Diff: {diff_dk:.6f}, dV Diff: {diff_dv:.6f}")
 
     atol = 5e-2 if dtype != torch.float32 else 2e-2
-    
+
     assert torch.allclose(out_manual, out_fused, atol = atol), f"Out diff too large: {diff_out}"
     assert torch.allclose(qc1.grad, qc2.grad, atol = atol), f"dQ diff too large: {diff_dq}"
     assert torch.allclose(kc1.grad, kc2.grad, atol = atol), f"dK diff too large: {diff_dk}"
     assert torch.allclose(vc1.grad, vc2.grad, atol = atol), f"dV diff too large: {diff_dv}"
-    
+
     if exists(pc1[0].grad) and exists(pc2[0].grad):
         diff_df = get_max_diff(pc1[0].grad, pc2[0].grad)
         assert torch.allclose(pc1[0].grad, pc2[0].grad, atol = atol), f"dfreqs diff too large: {diff_df}"
@@ -94,10 +94,10 @@ def test_compute_attn_similarity(seq_len_q, dim):
     # 1. Compute similarity then aggregate
     # We pass head_dimension_at_first = False because our q, k are (b, n, h, d)
     sim = compute_attn_similarity(q, k, pope, head_dimension_at_first = False)
-    
+
     softmax_scale = dim ** -0.5
     attn = (sim * softmax_scale).softmax(dim = -1)
-    
+
     # head-first for the einsum (b h n d)
     v_head_first = rearrange(v, 'b n h d -> b h n d')
     out_similarity = torch.einsum('b h i j, b h j d -> b h i d', attn, v_head_first)
