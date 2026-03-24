@@ -54,5 +54,13 @@ dev-dependencies = []
 [tool.hatch.metadata]
 allow-direct-references = true
 
+[tool.hatch.build.targets.sdist]
+include = [
+    "PoPE_pytorch",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["PoPE_pytorch"]
