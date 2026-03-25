@@ -172,10 +172,10 @@ class SimpleTransformer(nn.Module):
             curr_x = out[:, -self.max_seq_len:] if not exists(cache) else out[:, -1:]
             logits, cache = self.forward(curr_x, cache = cache, return_cache = True)
             logits = logits[:, -1]
-            
+
             # top-k filtering
             logits = top_k(logits, thres = filter_thres)
-            
+
             probs = F.softmax(logits / temperature, dim=-1)
             sample = torch.multinomial(probs, 1)
             out = torch.cat((out, sample), dim=-1)
