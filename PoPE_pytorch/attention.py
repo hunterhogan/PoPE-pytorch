@@ -82,7 +82,8 @@ def flash_attn_with_pope(
     causal = False,
     softmax_scale = None,
     fused = None,
-    head_dimension_at_first = True
+    head_dimension_at_first = True,
+    dropout = 0.
 ):
     seq_dim = 2 if head_dimension_at_first else 1
     q_len, kv_len, device = q.shape[seq_dim], k.shape[seq_dim], q.device
@@ -100,7 +101,7 @@ def flash_attn_with_pope(
             v = rearrange(v, 'b h n d -> b n h d')
 
         freqs, bias = pos_emb
-        out = flash_attn(q, k, v, freqs = freqs, pope_bias = bias, mask = mask, causal = causal, softmax_scale = softmax_scale)
+        out = flash_attn(q, k, v, freqs = freqs, pope_bias = bias, mask = mask, causal = causal, softmax_scale = softmax_scale, dropout = dropout)
 
         if head_dimension_at_first:
             out = rearrange(out, 'b n h d -> b h n d')
@@ -145,7 +146,8 @@ def flash_attn_with_pope(
         q, k, v,
         attn_mask = attn_mask,
         is_causal = causal,
-        scale = softmax_scale
+        scale = softmax_scale,
+        dropout_p = dropout
     )
 
     # mps sdpa bug (pytorch 2.9.1) - output takes q/k dim instead of v dim

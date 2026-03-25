@@ -130,8 +130,8 @@ def _fwd_kernel(
     stride_pbh,
     stride_ob, stride_oh, stride_om,
     stride_kmb, stride_kmn,
-    n_heads, seqlen_q, seqlen_k, headdim, rotate_dim,
-    HAS_POPE: tl.constexpr, IS_CAUSAL: tl.constexpr, HAS_MASK: tl.constexpr,
+    n_heads, seqlen_q, seqlen_k, headdim, rotate_dim, dropout_p, drop_seed,
+    HAS_POPE: tl.constexpr, IS_CAUSAL: tl.constexpr, HAS_MASK: tl.constexpr, IS_DROPOUT: tl.constexpr,
     BLOCK_HEADDIM: tl.constexpr, EVEN_M: tl.constexpr, EVEN_N: tl.constexpr, EVEN_HEADDIM: tl.constexpr,
     BM: tl.constexpr, BN: tl.constexpr,
 ):
@@ -238,6 +238,11 @@ def _fwd_kernel(
         else:
             v = tl.load(v_ptr, mask = cmask[:, None] & mask_d[None, :], other = 0.0)
 
+        if IS_DROPOUT:
+            drop_offset = (bhid * seqlen_q + off_m[:, None]) * seqlen_k + col_n[None, :]
+            keep = tl.rand(drop_seed, drop_offset) > dropout_p
+            prob = tl.where(keep, prob / (1.0 - dropout_p), 0.0)
+
         acc += tl.dot(prob.to(v.dtype), v) * beta[:, None]
         sum_i = sum_i * alpha + l_j * beta
         max_i = m_new
@@ -294,8 +299,8 @@ def _bwd_kernel(
     stride_dvb, stride_dvh, stride_dvn,
     stride_dfb, stride_dfh, stride_dfi,
     stride_kmb, stride_kmn,
-    n_heads, seqlen_q, seqlen_k, headdim, rotate_dim,
-    HAS_POPE: tl.constexpr, IS_CAUSAL: tl.constexpr, HAS_MASK: tl.constexpr,
+    n_heads, seqlen_q, seqlen_k, headdim, rotate_dim, dropout_p, drop_seed,
+    HAS_POPE: tl.constexpr, IS_CAUSAL: tl.constexpr, HAS_MASK: tl.constexpr, IS_DROPOUT: tl.constexpr,
     BLOCK_HEADDIM: tl.constexpr, EVEN_M: tl.constexpr, EVEN_N: tl.constexpr, EVEN_HEADDIM: tl.constexpr,
     BM: tl.constexpr, BN: tl.constexpr,
 ):
@@ -371,10 +376,19 @@ def _bwd_kernel(
         # dv, dp
 
         do = tl.load(DO + b * stride_db + h * stride_dh + cur_m[:, None] * stride_dm + off_d[None, :], mask = mask_m[:, None] & mask_d[None, :], other = 0.0)
-        d_v += tl.dot(tl.trans(prob.to(do.dtype)), do)
+
+        if IS_DROPOUT:
+            drop_offset = (bhid * seqlen_q + cur_m[:, None]) * seqlen_k + off_n[None, :]
+            keep = tl.rand(drop_seed, drop_offset) > dropout_p
+            prob_drop = tl.where(keep, prob / (1.0 - dropout_p), 0.0)
+        else:
+            prob_drop = prob
+
+        d_v += tl.dot(tl.trans(prob_drop.to(do.dtype)), do)
         dp = tl.dot(do.to(prob.dtype), tl.trans(v.to(prob.dtype)))
 
-        # ds = prob * (dp - delta) * scale
+        if IS_DROPOUT:
+            dp = tl.where(keep, dp / (1.0 - dropout_p), 0.0)
 
         delta = tl.load(Delta + bhid * seqlen_q + cur_m, mask = mask_m, other = 0.0)
         ds = prob * (dp - delta[:, None]) * softmax_scale
@@ -413,7 +427,7 @@ def _bwd_kernel(
 
 # wrapper functions
 
-def flash_attn_forward(q, k, v, freqs = None, pope_bias = None, mask = None, causal = False, softmax_scale = None):
+def flash_attn_forward(q, k, v, freqs = None, pope_bias = None, mask = None, causal = False, softmax_scale = None, dropout = 0., drop_seed = 0):
     batch, seq_q, heads, d = q.shape
     seq_k = k.shape[1]
 
@@ -441,8 +455,8 @@ def flash_attn_forward(q, k, v, freqs = None, pope_bias = None, mask = None, cau
             *f_str, pb_str,
             o.stride(0), o.stride(2), o.stride(1),
             *m_str,
-            heads, seq_q, seq_k, d, rot,
-            has_p, causal, exists(mask),
+            heads, seq_q, seq_k, d, rot, dropout, drop_seed,
+            has_p, causal, exists(mask), dropout > 0.0,
             BLOCK_HEADDIM = blk_d, BM = bm, BN = bn,
             num_warps = 4, num_stages = 1,
         )
@@ -457,14 +471,14 @@ def flash_attn_forward(q, k, v, freqs = None, pope_bias = None, mask = None, cau
             *f_str, pb_str,
             o.stride(0), o.stride(2), o.stride(1),
             *m_str,
-            heads, seq_q, seq_k, d, rot,
-            has_p, causal, exists(mask),
+            heads, seq_q, seq_k, d, rot, dropout, drop_seed,
+            has_p, causal, exists(mask), dropout > 0.0,
             BLOCK_HEADDIM = blk_d,
         )
 
     return o, lse
 
-def flash_attn_backward(do, q, k, v, o, lse, dq, dk, dv, dfreqs = None, dpope_bias = None, freqs = None, pope_bias = None, mask = None, causal = False, softmax_scale = None):
+def flash_attn_backward(do, q, k, v, o, lse, dq, dk, dv, dfreqs = None, dpope_bias = None, freqs = None, pope_bias = None, mask = None, causal = False, softmax_scale = None, dropout = 0., drop_seed = 0):
     batch, seq_q, heads, d = q.shape
     seq_k = k.shape[1]
 
@@ -510,8 +524,8 @@ def flash_attn_backward(do, q, k, v, o, lse, dq, dk, dv, dfreqs = None, dpope_bi
             dk.stride(0), dk.stride(2), dk.stride(1),
             dv.stride(0), dv.stride(2), dv.stride(1),
             *df_str, *m_str,
-            heads, seq_q, seq_k, d, rot,
-            has_p, causal, exists(mask),
+            heads, seq_q, seq_k, d, rot, dropout, drop_seed,
+            has_p, causal, exists(mask), dropout > 0.0,
             BLOCK_HEADDIM = blk_d, BM = bm, BN = bn,
             num_warps = nw, num_stages = 1,
         )
@@ -529,8 +543,8 @@ def flash_attn_backward(do, q, k, v, o, lse, dq, dk, dv, dfreqs = None, dpope_bi
             dk.stride(0), dk.stride(2), dk.stride(1),
             dv.stride(0), dv.stride(2), dv.stride(1),
             *df_str, *m_str,
-            heads, seq_q, seq_k, d, rot,
-            has_p, causal, exists(mask),
+            heads, seq_q, seq_k, d, rot, dropout, drop_seed,
+            has_p, causal, exists(mask), dropout > 0.0,
             BLOCK_HEADDIM = blk_d,
         )
 
@@ -538,11 +552,14 @@ def flash_attn_backward(do, q, k, v, o, lse, dq, dk, dv, dfreqs = None, dpope_bi
 
 class FlashAttnFunction(Function):
     @staticmethod
-    def forward(ctx, q, k, v, freqs = None, pope_bias = None, mask = None, causal = False, softmax_scale = None):
-        o, lse = flash_attn_forward(q, k, v, freqs, pope_bias, mask, causal, softmax_scale)
+    def forward(ctx, q, k, v, freqs = None, pope_bias = None, mask = None, causal = False, softmax_scale = None, dropout = 0.):
+        drop_seed = int(torch.randint(0, 2**31 - 1, (1,), device=q.device).item()) if dropout > 0. else 0
+        o, lse = flash_attn_forward(q, k, v, freqs, pope_bias, mask, causal, softmax_scale, dropout, drop_seed)
         ctx.save_for_backward(q, k, v, freqs, pope_bias, mask, o, lse)
         ctx.causal = causal
         ctx.softmax_scale = softmax_scale
+        ctx.dropout = dropout
+        ctx.drop_seed = drop_seed
         return o
 
     @staticmethod
@@ -556,11 +573,11 @@ class FlashAttnFunction(Function):
         df = torch.zeros_like(f) if exists(f) else None
         dpb = torch.zeros_like(pb) if exists(pb) else None
 
-        flash_attn_backward(do, q, k, v, o, lse, dq, dk, dv, df, dpb, f, pb, m, ctx.causal, ctx.softmax_scale)
-        return dq.to(q.dtype), dk, dv, df, dpb, None, None, None
+        flash_attn_backward(do, q, k, v, o, lse, dq, dk, dv, df, dpb, f, pb, m, ctx.causal, ctx.softmax_scale, ctx.dropout, ctx.drop_seed)
+        return dq.to(q.dtype), dk, dv, df, dpb, None, None, None, None
 
 # public api
 
-def flash_attn(q, k, v, freqs = None, pope_bias = None, mask = None, causal = False, softmax_scale = None):
+def flash_attn(q, k, v, freqs = None, pope_bias = None, mask = None, causal = False, softmax_scale = None, dropout = 0.):
     q, k, v = map(lambda t: t.contiguous(), (q, k, v))
-    return FlashAttnFunction.apply(q, k, v, freqs, pope_bias, mask, causal, softmax_scale)
+    return FlashAttnFunction.apply(q, k, v, freqs, pope_bias, mask, causal, softmax_scale, dropout)
