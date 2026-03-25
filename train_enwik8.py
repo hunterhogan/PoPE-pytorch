@@ -5,6 +5,8 @@
 #   "wandb",
 #   "accelerate",
 #   "einops",
+#   "fire",
+#   "PoPE-pytorch",
 #   "x-transformers"
 # ]
 # ///
@@ -19,8 +21,7 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset
 
 from einops import rearrange
-from x_transformers import FeedForward, RMSNorm
-from x_transformers.autoregressive_wrapper import AutoregressiveWrapper
+from x_transformers.autoregressive_wrapper import top_k
 
 from accelerate import Accelerator
 from PoPE_pytorch import PoPE
@@ -45,6 +46,29 @@ def decode_token(token):
 def decode_tokens(tokens):
     return ''.join(list(map(decode_token, tokens)))
 
+# modules
+
+class RMSNorm(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.scale = dim ** 0.5
+        self.gamma = nn.Parameter(torch.ones(dim))
+
+    def forward(self, x):
+        return F.normalize(x, dim = -1) * self.scale * self.gamma
+
+class FeedForward(nn.Module):
+    def __init__(self, dim, mult = 4):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(dim, dim * mult),
+            nn.GELU(),
+            nn.Linear(dim * mult, dim)
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
 # attention
 
 class CausalAttention(nn.Module):
@@ -56,9 +80,15 @@ class CausalAttention(nn.Module):
         self.to_qkv = nn.Linear(dim, dim * 3, bias = False)
         self.to_out = nn.Linear(dim, dim, bias = False)
 
-    def forward(self, x, pos_emb = None):
+    def forward(self, x, pos_emb = None, cache = None):
         qkv = self.to_qkv(x).chunk(3, dim = -1)
         q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = self.heads), qkv)
+
+        if exists(cache):
+            ck, cv = cache
+            k, v = (torch.cat(t, dim = -2) for t in ((ck, k), (cv, v)))
+
+        new_cache = (k, v)
 
         if self.use_pope and exists(pos_emb):
             out = flash_attn_with_pope(
@@ -73,7 +103,7 @@ class CausalAttention(nn.Module):
             out = F.scaled_dot_product_attention(q, k, v, is_causal = True, scale = self.scale)
 
         out = rearrange(out, 'b h n d -> b n (h d)')
-        return self.to_out(out)
+        return self.to_out(out), new_cache
 
 # simple transformer
 
@@ -89,11 +119,6 @@ class SimpleTransformer(nn.Module):
     ):
         super().__init__()
         self.max_seq_len = seq_len
-        self.can_cache_kv = False
-        self.can_cache_kv_outside_max_seq_len = False
-        self.add_continuous_pred_head = False
-        self.output_is_log_prob = False
-
         self.use_pope = use_pope
 
         self.token_emb = nn.Embedding(num_tokens, dim)
@@ -110,22 +135,60 @@ class SimpleTransformer(nn.Module):
         self.norm = RMSNorm(dim)
         self.to_logits = nn.Linear(dim, num_tokens, bias = False)
 
-    def forward(self, x, return_intermediates = False, **kwargs):
-        n = x.shape[1]
+    def forward(self, x, cache = None, return_cache = False):
+        seq_len = x.shape[1]
         x = self.token_emb(x)
 
+        seq_len_kv = seq_len if not exists(cache) else (cache[0][0].shape[-2] + seq_len)
+
         if self.use_pope:
-            pos_emb = self.pope(n)
+            pos_emb = self.pope(seq_len_kv)
         else:
             pos_emb = None
-            x = x + self.pos_emb(torch.arange(n, device = x.device))
+            x = x + self.pos_emb(torch.arange(seq_len_kv - seq_len, seq_len_kv, device = x.device))
 
-        for norm1, attn, norm2, ff in self.layers:
-            x = x + attn(norm1(x), pos_emb)
+        new_caches = []
+        for i, (norm1, attn, norm2, ff) in enumerate(self.layers):
+            layer_cache = cache[i] if exists(cache) else None
+            attn_out, new_layer_cache = attn(norm1(x), pos_emb, cache = layer_cache)
+            new_caches.append(new_layer_cache)
+            x = x + attn_out
             x = x + ff(norm2(x))
 
         logits = self.to_logits(self.norm(x))
-        return (logits, None) if return_intermediates else logits
+
+        if return_cache:
+            return logits, new_caches
+
+        return logits
+
+    @torch.no_grad()
+    def generate(self, prompts, seq_len, temperature = 1.0, filter_thres = 0.9):
+        b, t = prompts.shape
+        out = prompts
+        cache = None
+
+        for _ in tqdm.tqdm(range(seq_len), desc='generating'):
+            curr_x = out[:, -self.max_seq_len:] if not exists(cache) else out[:, -1:]
+            logits, cache = self.forward(curr_x, cache = cache, return_cache = True)
+            logits = logits[:, -1]
+            
+            # top-k filtering
+            logits = top_k(logits, thres = filter_thres)
+            
+            probs = F.softmax(logits / temperature, dim=-1)
+            sample = torch.multinomial(probs, 1)
+            out = torch.cat((out, sample), dim=-1)
+        return out[:, t:]
+
+# autoregressive training logic
+def autoregressive_loss(model, x):
+    # x shape: (b, n)
+    inputs = x[:, :-1]
+    targets = x[:, 1:]
+    logits = model(inputs)
+    loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1))
+    return loss
 
 # training
 
@@ -136,6 +199,7 @@ def train(
     learning_rate = 1e-4,
     validate_every = 100,
     generate_every = 250,
+    generate_len = None,
     seq_len = 128,
     dim = 512,
     depth = 6,
@@ -144,19 +208,18 @@ def train(
     use_wandb = False,
     cpu = False,
 ):
+    generate_len = min(default(generate_len, seq_len), seq_len)
     run_name = 'pope' if use_pope else 'abs_pos'
     accelerator = Accelerator(cpu = cpu)
     device = accelerator.device
 
-    model = AutoregressiveWrapper(
-        SimpleTransformer(
-            num_tokens = 256,
-            dim = dim,
-            depth = depth,
-            heads = heads,
-            seq_len = seq_len,
-            use_pope = use_pope,
-        )
+    model = SimpleTransformer(
+        num_tokens = 256,
+        dim = dim,
+        depth = depth,
+        heads = heads,
+        seq_len = seq_len,
+        use_pope = use_pope,
     )
 
     # data
@@ -211,7 +274,7 @@ def train(
         model.train()
 
         for _ in range(gradient_accumulate_every):
-            loss = model(next(train_loader))
+            loss = autoregressive_loss(model, next(train_loader))
             accelerator.backward(loss / gradient_accumulate_every)
 
         train_loss = loss.item()
@@ -227,7 +290,7 @@ def train(
         if i % validate_every == 0:
             model.eval()
             with torch.no_grad():
-                val_loss = model(next(val_loader)).item()
+                val_loss = autoregressive_loss(model, next(val_loader)).item()
                 pbar.set_postfix(loss = f'{train_loss:.4f}', val = f'{val_loss:.4f}')
                 if use_wandb:
                     wandb.log(dict(valid_loss = val_loss), step = i)
@@ -239,8 +302,7 @@ def train(
 
             sample = accelerator.unwrap_model(model).generate(
                 prompts = inp,
-                seq_len = 128,
-                cache_kv = False
+                seq_len = generate_len
             )
 
             output_str = decode_tokens(sample[0].cpu().numpy())

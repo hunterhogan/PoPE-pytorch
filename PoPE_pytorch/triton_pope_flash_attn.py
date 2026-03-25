@@ -159,9 +159,10 @@ def _fwd_kernel(
 
     # apply pope rotary to q
 
+    q_off = seqlen_k - seqlen_q
+
     if HAS_POPE:
         q = _apply_softplus(q, mask_r)
-        q_off = seqlen_k - seqlen_q
         fq = tl.load(Freqs + b * stride_fb + h * stride_fh + (q_off + off_m[:, None]) * stride_fi + off_d[None, :], mask = mask_m[:, None] & mask_r[None, :], other = 0.0).to(tl.float32)
         q_cos, q_sin = _apply_rotations(q, fq, mask_r)
     else:
@@ -173,7 +174,7 @@ def _fwd_kernel(
     sum_i = tl.zeros([BM], tl.float32)
     acc = tl.zeros([BM, BLOCK_HEADDIM], tl.float32)
 
-    end_n = seqlen_k if not IS_CAUSAL else tl.minimum((blk_m + 1) * BM, seqlen_k)
+    end_n = seqlen_k if not IS_CAUSAL else tl.minimum((blk_m + 1) * BM + q_off, seqlen_k)
 
     for start_n in range(0, end_n, BN):
         col_n = start_n + off_n
@@ -205,7 +206,7 @@ def _fwd_kernel(
         # masking
 
         if IS_CAUSAL:
-            qk += tl.where(off_m[:, None] >= col_n[None, :], 0, float('-inf'))
+            qk += tl.where(off_m[:, None] + q_off >= col_n[None, :], 0, float('-inf'))
 
         if HAS_MASK:
             mask = tl.load(Mask + b * stride_kmb + col_n * stride_kmn, mask = cmask, other = False)
@@ -355,7 +356,7 @@ def _bwd_kernel(
         qk *= softmax_scale
 
         if IS_CAUSAL:
-            qk += tl.where(cur_m[:, None] >= off_n[None, :], 0, float('-inf'))
+            qk += tl.where(cur_m[:, None] + q_off >= off_n[None, :], 0, float('-inf'))
 
         if HAS_MASK:
             mask = tl.load(Mask + b * stride_kmb + off_n * stride_kmn, mask = mask_n, other = False)

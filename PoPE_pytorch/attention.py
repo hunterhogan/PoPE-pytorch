@@ -3,6 +3,7 @@ import torch.nn.functional as F
 
 from PoPE_pytorch.pope import apply_pope_to_qk
 
+from torch_einops_utils import and_masks
 from einops import rearrange, repeat
 
 # helpers
@@ -83,6 +84,9 @@ def flash_attn_with_pope(
     fused = None,
     head_dimension_at_first = True
 ):
+    seq_dim = 2 if head_dimension_at_first else 1
+    q_len, kv_len, device = q.shape[seq_dim], k.shape[seq_dim], q.device
+
     fused = default(fused, TRITON_AVAILABLE and q.is_cuda)
 
     softmax_scale = default(softmax_scale, q.shape[-1] ** -0.5)
@@ -131,6 +135,11 @@ def flash_attn_with_pope(
     attn_mask = None
     if exists(mask):
         attn_mask = rearrange(mask, 'b j -> b 1 1 j')
+
+    if causal and q_len < kv_len:
+        causal_mask = torch.ones((q_len, kv_len), dtype = torch.bool, device = device).tril(diagonal = kv_len - q_len)
+        attn_mask = and_masks(attn_mask, causal_mask)
+        causal = False
 
     out = F.scaled_dot_product_attention(
         q, k, v,
