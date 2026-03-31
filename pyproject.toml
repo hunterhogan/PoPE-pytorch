@@ -16,12 +16,16 @@ keywords = [
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3.10",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
-dependencies = ["einops>=0.8.1", "torch>=2.5", "torch-einops-utils>=0.0.14"]
+dependencies = [
+  "einops>=0.8.1",
+  "torch>=2.5",
+  "torch-einops-utils>=0.0.14",
+  "triton>=3.6.0; sys_platform == 'linux'"
+]
 
 [project.urls]
 Homepage = "https://pypi.org/project/PoPE-pytorch/"
