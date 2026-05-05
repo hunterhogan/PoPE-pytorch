@@ -14,6 +14,6 @@ license: CC-BY-NC-4.0
 message: Cite this software with the metadata in this file.
 repository: https://github.com/hunterhogan/PoPE-pytorch
 repository-artifact: https://pypi.org/project/pope-pytorch/0.1.4/
-title: PoPE-pytorch
+title: PoPE_pytorch
 url: https://github.com/hunterhogan/PoPE-pytorch
 version: 0.1.4
