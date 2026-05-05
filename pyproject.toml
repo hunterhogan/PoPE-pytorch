@@ -1,5 +1,5 @@
 [project]
-name = "PoPE-pytorch"
+name = "PoPE_pytorch"
 version = "0.1.4"
 description = "Typed and documented fork of lucidrains/PoPE-pytorch."
 readme = "README.md"
@@ -49,3 +49,7 @@ testing = [
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "PoPE_pytorch"
+
