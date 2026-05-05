@@ -12,6 +12,7 @@ from torch.nn import Module, Parameter, ParameterList
 from torch.types import Number
 from torch_einops_kit import exists
 
+from PoPE_pytorch import PolarEmbedReturn
 from PoPE_pytorch.pope import apply_pope_to_qk
 
 
@@ -59,7 +60,7 @@ class AxialPoPE(Module):
 		return stack([g.flatten() for g in reversed(grid)], dim=-1)
 
 	@autocast('cuda', enabled=False)
-	def forward(self, pos_or_dims: Tensor | tuple[int, ...]) -> tuple[Tensor, Tensor]:
+	def forward(self, pos_or_dims: Tensor | tuple[int, ...]) -> PolarEmbedReturn:
 		# handle auto grid generation if tuple is passed
 
 		if isinstance(pos_or_dims, tuple):
@@ -96,4 +97,4 @@ class AxialPoPE(Module):
 
 		bias: Tensor = self.bias.clamp(-2.0 * pi, 0.0)
 
-		return (freqs, bias)
+		return PolarEmbedReturn(freqs, bias)

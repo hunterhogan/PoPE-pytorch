@@ -27,7 +27,6 @@ dependencies = [
     "hunterMakesPy",
     "torch>=2.5",
     "torch_einops_kit",
-    "torch-einops-utils>=0.0.14"
 ]
 
 [project.urls]

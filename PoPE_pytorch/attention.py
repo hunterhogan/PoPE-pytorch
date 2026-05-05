@@ -6,6 +6,7 @@ from einops import rearrange, repeat
 from torch import Tensor
 from torch_einops_kit import and_masks, default, divisible_by, exists
 
+from PoPE_pytorch import PolarEmbedReturn
 from PoPE_pytorch.pope import apply_pope_to_qk
 
 try:
@@ -16,7 +17,7 @@ try:
 except ImportError:
 	TRITON_AVAILABLE = False
 
-def compute_attn_similarity_non_fused(q: Tensor, k: Tensor, pope: tuple[Tensor, Tensor], *, head_dimension_at_first: bool = True) -> Tensor:
+def compute_attn_similarity_non_fused(q: Tensor, k: Tensor, pope: PolarEmbedReturn, *, head_dimension_at_first: bool = True) -> Tensor:
 
 	if not head_dimension_at_first:
 		q = rearrange(q, 'b n h d -> b h n d')
@@ -32,7 +33,7 @@ def compute_attn_similarity_non_fused(q: Tensor, k: Tensor, pope: tuple[Tensor, 
 	return torch.einsum('b h i d, b h j d -> b h i j', q, k)
 
 def compute_attn_similarity(
-	q: Tensor, k: Tensor, pope: tuple[Tensor, Tensor], *, allow_tf32: bool = True, head_dimension_at_first: bool = True
+	q: Tensor, k: Tensor, pope: PolarEmbedReturn, *, allow_tf32: bool = True, head_dimension_at_first: bool = True
 ) -> Tensor:
 
 	q_heads: int = q.shape[1 if head_dimension_at_first else 2]
@@ -65,7 +66,7 @@ def flash_attn_with_pope(
 	q: Tensor,
 	k: Tensor,
 	v: Tensor,
-	pos_emb: tuple[Tensor, Tensor],
+	pos_emb: PolarEmbedReturn,
 	*,
 	mask: Tensor | None = None,
 	causal: bool = False,

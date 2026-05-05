@@ -1,9 +1,8 @@
-
 from __future__ import annotations
 
 from collections.abc import Callable
 from math import pi
-from typing import cast
+from typing import cast, NamedTuple
 
 import torch
 import torch.nn.functional as F
@@ -12,12 +11,18 @@ from torch import Tensor, arange, cat, is_tensor
 from torch._prims_common import DeviceLikeType
 from torch.amp.autocast_mode import autocast
 from torch.nn import Module, Parameter
+
 from torch_einops_kit import exists, slice_right_at_dim
+
+
+class PolarEmbedReturn(NamedTuple):
+	freqs: Tensor
+	bias: Tensor
 
 
 @autocast('cuda', enabled=False)
 def apply_pope_to_qk(
-	pope: tuple[Tensor, Tensor], q: Tensor, k: Tensor, to_magnitude: Callable[..., Tensor] = F.softplus, *, return_complex: bool = False
+	pope: PolarEmbedReturn, q: Tensor, k: Tensor, to_magnitude: Callable[..., Tensor] = F.softplus, *, return_complex: bool = False
 ) -> tuple[Tensor, Tensor]:
 	freqs, bias = pope
 
@@ -102,7 +107,7 @@ class PoPE(Module):
 		return cast(Tensor, self.inv_freqs).device
 
 	@autocast('cuda', enabled=False)
-	def forward(self, pos_or_seq_len: Tensor | int, offset: int = 0) -> tuple[Tensor, Tensor]:
+	def forward(self, pos_or_seq_len: Tensor | int, offset: int = 0) -> PolarEmbedReturn:
 		# get positions depending on input
 
 		if is_tensor(pos_or_seq_len):
@@ -121,4 +126,4 @@ class PoPE(Module):
 
 		bias: Tensor = self.bias.clamp(-2.0 * pi, 0.0)
 
-		return (freqs, bias)
+		return PolarEmbedReturn(freqs, bias)
