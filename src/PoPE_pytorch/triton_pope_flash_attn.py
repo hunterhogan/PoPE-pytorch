@@ -31,18 +31,17 @@ References
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable, Hashable, Sequence
-from typing import Any
-
-import torch
-import triton
-import triton.language as tl
 from torch import Tensor
 from torch.autograd import Function
 from torch.autograd.function import FunctionCtx
 from torch_einops_kit import default, exists
 from triton.runtime.autotuner import Autotuner
+from typing import Any
+import os
+import torch
+import triton
+import triton.language as tl
 
 _NO_AUTOTUNE: bool = os.environ.get('POPE_NO_AUTOTUNE', '0') == '1'
 
