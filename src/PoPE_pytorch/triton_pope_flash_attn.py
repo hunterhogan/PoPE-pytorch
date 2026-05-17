@@ -1,3 +1,15 @@
+# pyright: reportOptionalMemberAccess=none
+# pyright: reportAttributeAccessIssue=none
+# pyright: reportIndexIssue=none
+# pyright: reportArgumentType=none
+# pyright: reportAssignmentType=false
+# pyright: reportIncompatibleMethodOverride=none
+# pyright: reportPossiblyUnboundVariable=none
+# pyright: reportUnknownArgumentType=none
+# pyright: reportUnknownMemberType=none
+# pyright: reportUnknownVariableType=none
+# pyright: reportUnusedVariable=none
+# ruff: noqa: ERA001, ARG001, E731, FBT001, FBT002
 """Access fused Triton FlashAttention kernels for PoPE.
 
 (AI generated docstring)

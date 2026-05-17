@@ -1,3 +1,4 @@
+# ruff: noqa: D104
 # isort: split
 from __future__ import annotations
 

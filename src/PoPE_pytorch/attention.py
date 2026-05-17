@@ -1,3 +1,5 @@
+# pyright: reportPossiblyUnboundVariable=none
+# ruff: noqa: ERA001
 """Access PoPE-aware similarity and attention helpers.
 
 (AI generated docstring)

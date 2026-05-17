@@ -1,3 +1,5 @@
+# pyright: reportUntypedFunctionDecorator=none
+# ruff: noqa: ERA001
 """Access multi-axis extensions of Polar Coordinate Positional Embedding.
 
 (AI generated docstring)

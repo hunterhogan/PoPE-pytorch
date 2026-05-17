@@ -1,3 +1,12 @@
+# pyright: reportArgumentType=none
+# pyright: reportAssignmentType=false
+# pyright: reportIncompatibleMethodOverride=none
+# pyright: reportPossiblyUnboundVariable=none
+# pyright: reportUnknownArgumentType=none
+# pyright: reportUnknownMemberType=none
+# pyright: reportUnknownVariableType=none
+# pyright: reportUnusedVariable=none
+# ruff: noqa: ERA001 ARG001 E731 F841
 """Access Triton kernels for PoPE similarity computation.
 
 (AI generated docstring)
@@ -31,17 +40,15 @@ References
 """
 from __future__ import annotations
 
-import os
 from collections.abc import Callable, Mapping
-
-import torch
-import triton
-import triton.language as tl
 from einops import repeat
 from torch_einops_kit import divisible_by, exists
 from triton.runtime.autotuner import Autotuner
 from triton.runtime.jit import JITFunction
-
+import os
+import torch
+import triton
+import triton.language as tl
 
 @triton.jit
 def softplus(x: tl.tensor) -> tl.tensor:
@@ -454,7 +461,7 @@ def _bwd_kernel_dqk_df(
 				tl.atomic_add(dFreqs + b * stride_dfb + h * stride_dfh + (q_off + off_i[:, None]) * stride_dfi + (d_start + off_d[None, :]) * stride_dfd, d_fq, mask = mask_i[:, None] & mask_r[None, :])
 
 	else:
-		# MODE == 1: compute dK by iterating over q-blocks  
+		# MODE == 1: compute dK by iterating over q-blocks
 
 		off_j = grid_idx * BN + tl.arange(0, BN)
 		mask_j = off_j < seq_k
@@ -578,8 +585,8 @@ def _bwd_kernel_dbias(
 			cos_tk: tl.tensor = tl.where(mask_r[None, :], tl.cos(th_k), tl.sqrt(1.0))
 			sin_tk: tl.tensor = tl.where(mask_r[None, :], tl.sin(th_k), tl.zeros((1,)))
 
-			# dbias = sum_ij ds_ij * d/dbias (q_cos_i . k_cos_j + q_sin_i . k_sin_j)  
-			#       = sum_ij ds_ij * sum_d (act_q * sin_fq)(act_k * cos_tk) - (act_q * cos_fq)(act_k * sin_tk)  
+			# dbias = sum_ij ds_ij * d/dbias (q_cos_i . k_cos_j + q_sin_i . k_sin_j)
+			#       = sum_ij ds_ij * sum_d (act_q * sin_fq)(act_k * cos_tk) - (act_q * cos_fq)(act_k * sin_tk)
 
 			q_sin_d: tl.tensor = (act_q * sin_fq).to(tl.float32)
 			q_cos_d: tl.tensor = (act_q * cos_fq).to(tl.float32)
@@ -659,7 +666,7 @@ class PoPESimilarityFunction(torch.autograd.Function):
 		ctx.freqs_requires_grad = freqs.requires_grad
 		ctx.bias_requires_grad = bias.requires_grad
 
-		# expand freqs to (b, h, seq, rotate_dim) if needed  
+		# expand freqs to (b, h, seq, rotate_dim) if needed
 
 		if freqs.ndim == 2:
 			freqs = freqs.view(1, 1, freqs.shape[0], rotate_dim).expand(b, h, freqs.shape[0], rotate_dim)
@@ -765,13 +772,13 @@ class PoPESimilarityFunction(torch.autograd.Function):
 			df.stride(3) if exists(df) else 0,
 		)
 
-		# separate dFreqs buffers for MODE=0 and MODE=1  
+		# separate dFreqs buffers for MODE=0 and MODE=1
 		# so autotuner pre_hook can safely zero each independently
 
 		dfreqs_q: torch.Tensor | None = torch.zeros_like(freqs, dtype=torch.float32) if has_df else None
 		dfreqs_k: torch.Tensor | None = torch.zeros_like(freqs, dtype=torch.float32) if has_df else None
 
-		# MODE=0: compute dQ  
+		# MODE=0: compute dQ
 
 		if _NO_AUTOTUNE:
 			_bwd_kernel_dqk_df[(b * h, triton.cdiv(seq_q, bm))](
@@ -805,7 +812,7 @@ class PoPESimilarityFunction(torch.autograd.Function):
 				MODE = 0, ALLOW_TF32 = allow_tf32, HAS_DF = has_df,
 			)
 
-		# MODE=1: compute dK  
+		# MODE=1: compute dK
 
 		if _NO_AUTOTUNE:
 			_bwd_kernel_dqk_df[(b * h, triton.cdiv(seq_k, bn))](

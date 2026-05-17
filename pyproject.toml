@@ -16,9 +16,9 @@ keywords = [
 ]
 dependencies = [
   "einops>=0.8.2",
-  "hunterMakesPy>=0.5.3",
-  "torch>=2.11.0",
-  "torch-einops-kit>=0.1.2",
+  "hunterMakesPy",
+  "torch>=2.0.0",
+  "torch-einops-kit",
   "triton>=3.6.0 ; sys_platform == 'linux'",
   "triton-windows>=3.7.0.post26 ; sys_platform == 'win32'",
 ]
@@ -41,11 +41,11 @@ Repository = "https://github.com/hunterhogan/PoPE-pytorch"
 
 [dependency-groups]
 dev = [
-  "pytest-cov>=7.1.0",
+  "pytest-cov",
 ]
 testing = [
-  "pytest>=9.0.3",
-  "pytest-xdist>=3.8.0",
+  "pytest",
+  "pytest-xdist",
 ]
 
 [build-system]

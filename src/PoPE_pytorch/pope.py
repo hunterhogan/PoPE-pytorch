@@ -1,3 +1,5 @@
+# pyright: reportPossiblyUnboundVariable=none
+# pyright: reportUntypedFunctionDecorator=none
 """Access one-dimensional Polar Coordinate Positional Embedding primitives.
 
 (AI generated docstring)
