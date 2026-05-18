@@ -672,18 +672,18 @@ testing = [
 [package.metadata]
 requires-dist = [
     { name = "einops", specifier = ">=0.8.2" },
-    { name = "huntermakespy", specifier = ">=0.5.3" },
-    { name = "torch", specifier = ">=2.11.0" },
-    { name = "torch-einops-kit", specifier = ">=0.1.2" },
+    { name = "huntermakespy" },
+    { name = "torch", specifier = ">=2.0.0" },
+    { name = "torch-einops-kit" },
     { name = "triton", marker = "sys_platform == 'linux'", specifier = ">=3.6.0" },
     { name = "triton-windows", marker = "sys_platform == 'win32'", specifier = ">=3.7.0.post26" },
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest-cov", specifier = ">=7.1.0" }]
+dev = [{ name = "pytest-cov" }]
 testing = [
-    { name = "pytest", specifier = ">=9.0.3" },
-    { name = "pytest-xdist", specifier = ">=3.8.0" },
+    { name = "pytest" },
+    { name = "pytest-xdist" },
 ]
 
 [[package]]
