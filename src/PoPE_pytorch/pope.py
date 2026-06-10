@@ -28,18 +28,20 @@ References
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from einops import einsum, rearrange
 from math import pi
 from PoPE_pytorch import PolarEmbedReturn
 from torch import arange, cat, is_tensor, Tensor
-from torch._prims_common import DeviceLikeType
 from torch.amp.autocast_mode import autocast
 from torch.nn import Module, Parameter
 from torch_einops_kit import exists, slice_right_at_dim
-from typing import cast
+from typing import cast, TYPE_CHECKING
 import torch
 import torch.nn.functional as F
+
+if TYPE_CHECKING:
+	from collections.abc import Callable
+	from torch._prims_common import DeviceLikeType
 
 @autocast('cuda', enabled=False)
 def apply_pope_to_qk(
@@ -76,7 +78,7 @@ def apply_pope_to_qk(
 
 	Raises
 	------
-	AssertionError
+	ValueError
 		Raised when `q` is longer than `k`, or when the rotated dimension exceeds the feature
 		dimension of `q` and `k`.
 
@@ -242,7 +244,7 @@ class PoPE(Module):
 		device : DeviceLikeType
 			Device holding `inv_freqs`.
 		"""
-		return cast(Tensor, self.inv_freqs).device
+		return cast('Tensor', self.inv_freqs).device
 
 	@autocast('cuda', enabled=False)
 	def forward(self, pos_or_seq_len: Tensor | int, offset: int = 0) -> PolarEmbedReturn:
@@ -290,13 +292,13 @@ class PoPE(Module):
 			pos: Tensor = pos_or_seq_len
 		else:
 			seq_len: int = pos_or_seq_len
-			pos = arange(seq_len, device=self.device, dtype=cast(Tensor, self.inv_freqs).dtype)
+			pos = arange(seq_len, device=self.device, dtype=cast('Tensor', self.inv_freqs).dtype)
 
-		pos = pos + offset
+		pos += offset
 
 		# freqs
 
-		freqs: Tensor = einsum(pos, cast(Tensor, self.inv_freqs), '... i, j -> ... i j')
+		freqs: Tensor = einsum(pos, cast('Tensor', self.inv_freqs), '... i, j -> ... i j')
 
 		# the bias, with clamping
 

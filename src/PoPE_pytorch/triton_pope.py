@@ -6,7 +6,7 @@
 # pyright: reportUnknownMemberType=none
 # pyright: reportUnknownVariableType=none
 # pyright: reportUnusedVariable=none
-# ruff: noqa: ERA001 ARG001 E731 F841
+# ruff: noqa: ARG001, E731, F841 DOC201
 """Access Triton kernels for PoPE similarity computation.
 
 (AI generated docstring)
@@ -40,15 +40,18 @@ References
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
 from einops import repeat
 from torch_einops_kit import divisible_by, exists
-from triton.runtime.autotuner import Autotuner
-from triton.runtime.jit import JITFunction
+from typing import TYPE_CHECKING
 import os
 import torch
 import triton
 import triton.language as tl
+
+if TYPE_CHECKING:
+	from collections.abc import Callable, Mapping
+	from triton.runtime.autotuner import Autotuner
+	from triton.runtime.jit import JITFunction
 
 @triton.jit
 def softplus(x: tl.tensor) -> tl.tensor:
@@ -330,14 +333,14 @@ def _fwd_kernel(
 
 		# load q, k
 
-		q: tl.tensor = tl.load(Q + b * stride_qb + h * stride_qh + off_i[:, None] * stride_qi + (d_start + off_d[None, :]) * stride_qd, mask = mask_i[:, None] & mask_d[None, :], other = 0.0)
-		k: tl.tensor = tl.load(K + b * stride_kb + h * stride_kh + off_j[:, None] * stride_kj + (d_start + off_d[None, :]) * stride_kd, mask = mask_j[:, None] & mask_d[None, :], other = 0.0)
+		q: tl.tensor = tl.load(Q + b * stride_qb + h * stride_qh + off_i[:, None] * stride_qi + (d_start + off_d[None, :]) * stride_qd, mask=mask_i[:, None] & mask_d[None, :], other=0.0)
+		k: tl.tensor = tl.load(K + b * stride_kb + h * stride_kh + off_j[:, None] * stride_kj + (d_start + off_d[None, :]) * stride_kd, mask=mask_j[:, None] & mask_d[None, :], other=0.0)
 
 		# load freqs, bias
 
-		fq: tl.tensor = tl.load(Freqs + b * stride_fb + h * stride_fh + (q_off + off_i[:, None]) * stride_fi + (d_start + off_d[None, :]) * stride_fd, mask = mask_i[:, None] & mask_r[None, :], other = 0.0)
-		fk: tl.tensor = tl.load(Freqs + b * stride_fb + h * stride_fh + off_j[:, None] * stride_fi + (d_start + off_d[None, :]) * stride_fd, mask = mask_j[:, None] & mask_r[None, :], other = 0.0)
-		bias: tl.tensor = tl.load(Bias + h * stride_bh + (d_start + off_d), mask = mask_r, other = 0.0)
+		fq: tl.tensor = tl.load(Freqs + b * stride_fb + h * stride_fh + (q_off + off_i[:, None]) * stride_fi + (d_start + off_d[None, :]) * stride_fd, mask=mask_i[:, None] & mask_r[None, :], other=0.0)
+		fk: tl.tensor = tl.load(Freqs + b * stride_fb + h * stride_fh + off_j[:, None] * stride_fi + (d_start + off_d[None, :]) * stride_fd, mask=mask_j[:, None] & mask_r[None, :], other=0.0)
+		bias: tl.tensor = tl.load(Bias + h * stride_bh + (d_start + off_d), mask=mask_r, other=0.0)
 
 		# softplus activation
 
@@ -358,7 +361,7 @@ def _fwd_kernel(
 		acc: tl.tensor = tl.dot(q_cos, tl.trans(k_cos), acc, allow_tf32=ALLOW_TF32)
 		acc = tl.dot(q_sin, tl.trans(k_sin), acc, allow_tf32=ALLOW_TF32)
 
-	tl.store(Out + b * stride_ob + h * stride_oh + off_i[:, None] * stride_oi + off_j[None, :] * stride_oj, acc, mask = mask_i[:, None] & mask_j[None, :])
+	tl.store(Out + b * stride_ob + h * stride_oh + off_i[:, None] * stride_oi + off_j[None, :] * stride_oj, acc, mask=mask_i[:, None] & mask_j[None, :])
 
 # backward kernel - computes dQ (MODE=0) or dK (MODE=1) + dFreqs
 # each MODE gets its own dFreqs buffer so pre_hook can safely zero it
@@ -424,8 +427,8 @@ def _bwd_kernel_dqk_df(
 
 			# load and precompute q-side quantities
 
-			q: tl.tensor = tl.load(Q + b * stride_qb + h * stride_qh + off_i[:, None] * stride_qi + (d_start + off_d[None, :]) * stride_qd, mask = mask_i[:, None] & mask_d[None, :], other = 0.0)
-			fq: tl.tensor = tl.load(Freqs + b * stride_fb + h * stride_fh + (q_off + off_i[:, None]) * stride_fi + (d_start + off_d[None, :]) * stride_fd, mask = mask_i[:, None] & mask_r[None, :], other = 0.0)
+			q: tl.tensor = tl.load(Q + b * stride_qb + h * stride_qh + off_i[:, None] * stride_qi + (d_start + off_d[None, :]) * stride_qd, mask=mask_i[:, None] & mask_d[None, :], other=0.0)
+			fq: tl.tensor = tl.load(Freqs + b * stride_fb + h * stride_fh + (q_off + off_i[:, None]) * stride_fi + (d_start + off_d[None, :]) * stride_fd, mask=mask_i[:, None] & mask_r[None, :], other=0.0)
 
 			sp_dq: tl.tensor = tl.where(mask_r[None, :], softplus_grad(q), tl.sqrt(1.0))
 			cos_fq: tl.tensor = tl.where(mask_r[None, :], tl.cos(fq), tl.sqrt(1.0))
@@ -438,11 +441,11 @@ def _bwd_kernel_dqk_df(
 
 				# load grad and k-side quantities
 
-				ds: tl.tensor = tl.load(dS + b * stride_sb + h * stride_sh + off_i[:, None] * stride_si + off_j[None, :] * stride_sj, mask = mask_i[:, None] & mask_j[None, :], other = 0.0)
+				ds: tl.tensor = tl.load(dS + b * stride_sb + h * stride_sh + off_i[:, None] * stride_si + off_j[None, :] * stride_sj, mask=mask_i[:, None] & mask_j[None, :], other=0.0)
 
-				k: tl.tensor = tl.load(K + b * stride_kb + h * stride_kh + off_j[:, None] * stride_kj + (d_start + off_d[None, :]) * stride_kd, mask = mask_j[:, None] & mask_d[None, :], other = 0.0)
-				fk: tl.tensor = tl.load(Freqs + b * stride_fb + h * stride_fh + off_j[:, None] * stride_fi + (d_start + off_d[None, :]) * stride_fd, mask = mask_j[:, None] & mask_r[None, :], other = 0.0)
-				bias: tl.tensor = tl.load(Bias + h * stride_bh + (d_start + off_d), mask = mask_r, other = 0.0)
+				k: tl.tensor = tl.load(K + b * stride_kb + h * stride_kh + off_j[:, None] * stride_kj + (d_start + off_d[None, :]) * stride_kd, mask=mask_j[:, None] & mask_d[None, :], other=0.0)
+				fk: tl.tensor = tl.load(Freqs + b * stride_fb + h * stride_fh + off_j[:, None] * stride_fi + (d_start + off_d[None, :]) * stride_fd, mask=mask_j[:, None] & mask_r[None, :], other=0.0)
+				bias: tl.tensor = tl.load(Bias + h * stride_bh + (d_start + off_d), mask=mask_r, other=0.0)
 
 				act_k: tl.tensor = tl.where(mask_r[None, :], softplus(k), k)
 				th_k: tl.tensor = fk + bias[None, :]
@@ -456,9 +459,9 @@ def _bwd_kernel_dqk_df(
 				if HAS_DF:
 					d_fq += act_q * (cos_fq * dot_sin - sin_fq * dot_cos)
 
-			tl.store(dQ + b * stride_dqb + h * stride_dqh + off_i[:, None] * stride_dqi + (d_start + off_d[None, :]) * stride_dqd, d_q, mask = mask_i[:, None] & mask_d[None, :])
+			tl.store(dQ + b * stride_dqb + h * stride_dqh + off_i[:, None] * stride_dqi + (d_start + off_d[None, :]) * stride_dqd, d_q, mask=mask_i[:, None] & mask_d[None, :])
 			if HAS_DF:
-				tl.atomic_add(dFreqs + b * stride_dfb + h * stride_dfh + (q_off + off_i[:, None]) * stride_dfi + (d_start + off_d[None, :]) * stride_dfd, d_fq, mask = mask_i[:, None] & mask_r[None, :])
+				tl.atomic_add(dFreqs + b * stride_dfb + h * stride_dfh + (q_off + off_i[:, None]) * stride_dfi + (d_start + off_d[None, :]) * stride_dfd, d_fq, mask=mask_i[:, None] & mask_r[None, :])
 
 	else:
 		# MODE == 1: compute dK by iterating over q-blocks
@@ -475,9 +478,9 @@ def _bwd_kernel_dqk_df(
 
 			# load and precompute k-side quantities
 
-			k = tl.load(K + b * stride_kb + h * stride_kh + off_j[:, None] * stride_kj + (d_start + off_d[None, :]) * stride_kd, mask = mask_j[:, None] & mask_d[None, :], other = 0.0)
-			fk = tl.load(Freqs + b * stride_fb + h * stride_fh + off_j[:, None] * stride_fi + (d_start + off_d[None, :]) * stride_fd, mask = mask_j[:, None] & mask_r[None, :], other = 0.0)
-			bias = tl.load(Bias + h * stride_bh + (d_start + off_d), mask = mask_r, other = 0.0)
+			k = tl.load(K + b * stride_kb + h * stride_kh + off_j[:, None] * stride_kj + (d_start + off_d[None, :]) * stride_kd, mask=mask_j[:, None] & mask_d[None, :], other=0.0)
+			fk = tl.load(Freqs + b * stride_fb + h * stride_fh + off_j[:, None] * stride_fi + (d_start + off_d[None, :]) * stride_fd, mask=mask_j[:, None] & mask_r[None, :], other=0.0)
+			bias = tl.load(Bias + h * stride_bh + (d_start + off_d), mask=mask_r, other=0.0)
 
 			sp_dk: tl.tensor = tl.where(mask_r[None, :], softplus_grad(k), tl.sqrt(1.0))
 			th_k = fk + bias[None, :]
@@ -489,10 +492,10 @@ def _bwd_kernel_dqk_df(
 				off_i = i_start + tl.arange(0, BM)
 				mask_i = off_i < seq_q
 
-				ds = tl.load(dS + b * stride_sb + h * stride_sh + off_i[:, None] * stride_si + off_j[None, :] * stride_sj, mask = mask_i[:, None] & mask_j[None, :], other = 0.0)
+				ds = tl.load(dS + b * stride_sb + h * stride_sh + off_i[:, None] * stride_si + off_j[None, :] * stride_sj, mask=mask_i[:, None] & mask_j[None, :], other=0.0)
 
-				q = tl.load(Q + b * stride_qb + h * stride_qh + off_i[:, None] * stride_qi + (d_start + off_d[None, :]) * stride_qd, mask = mask_i[:, None] & mask_d[None, :], other = 0.0)
-				fq = tl.load(Freqs + b * stride_fb + h * stride_fh + (q_off + off_i[:, None]) * stride_fi + (d_start + off_d[None, :]) * stride_fd, mask = mask_i[:, None] & mask_r[None, :], other = 0.0)
+				q = tl.load(Q + b * stride_qb + h * stride_qh + off_i[:, None] * stride_qi + (d_start + off_d[None, :]) * stride_qd, mask=mask_i[:, None] & mask_d[None, :], other=0.0)
+				fq = tl.load(Freqs + b * stride_fb + h * stride_fh + (q_off + off_i[:, None]) * stride_fi + (d_start + off_d[None, :]) * stride_fd, mask=mask_i[:, None] & mask_r[None, :], other=0.0)
 
 				act_q = tl.where(mask_r[None, :], softplus(q), q)
 				cos_fq = tl.where(mask_r[None, :], tl.cos(fq), tl.sqrt(1.0))
@@ -505,9 +508,9 @@ def _bwd_kernel_dqk_df(
 				if HAS_DF:
 					d_fk += act_k * (cos_tk * dot_sin - sin_tk * dot_cos)
 
-			tl.store(dK + b * stride_dkb + h * stride_dkh + off_j[:, None] * stride_dkj + (d_start + off_d[None, :]) * stride_dkd, d_k, mask = mask_j[:, None] & mask_d[None, :])
+			tl.store(dK + b * stride_dkb + h * stride_dkh + off_j[:, None] * stride_dkj + (d_start + off_d[None, :]) * stride_dkd, d_k, mask=mask_j[:, None] & mask_d[None, :])
 			if HAS_DF:
-				tl.atomic_add(dFreqs + b * stride_dfb + h * stride_dfh + off_j[:, None] * stride_dfi + (d_start + off_d[None, :]) * stride_dfd, d_fk, mask = mask_j[:, None] & mask_r[None, :])
+				tl.atomic_add(dFreqs + b * stride_dfb + h * stride_dfh + off_j[:, None] * stride_dfi + (d_start + off_d[None, :]) * stride_dfd, d_fk, mask=mask_j[:, None] & mask_r[None, :])
 
 # backward kernel for bias gradient
 
@@ -561,8 +564,8 @@ def _bwd_kernel_dbias(
 
 		# load q-side
 
-		q: tl.tensor = tl.load(Q + b * stride_qb + h * stride_qh + off_i[:, None] * stride_qi + (d_start + off_d[None, :]) * stride_qd, mask = mask_i[:, None] & mask_d[None, :], other = 0.0)
-		fq: tl.tensor = tl.load(Freqs + b * stride_fb + h * stride_fh + (q_off + off_i[:, None]) * stride_fi + (d_start + off_d[None, :]) * stride_fd, mask = mask_i[:, None] & mask_r[None, :], other = 0.0)
+		q: tl.tensor = tl.load(Q + b * stride_qb + h * stride_qh + off_i[:, None] * stride_qi + (d_start + off_d[None, :]) * stride_qd, mask=mask_i[:, None] & mask_d[None, :], other=0.0)
+		fq: tl.tensor = tl.load(Freqs + b * stride_fb + h * stride_fh + (q_off + off_i[:, None]) * stride_fi + (d_start + off_d[None, :]) * stride_fd, mask=mask_i[:, None] & mask_r[None, :], other=0.0)
 
 		act_q: tl.tensor = tl.where(mask_r[None, :], softplus(q), q)
 		cos_fq: tl.tensor = tl.where(mask_r[None, :], tl.cos(fq), tl.sqrt(1.0))
@@ -575,10 +578,10 @@ def _bwd_kernel_dbias(
 			off_j: tl.tensor = j_start + tl.arange(0, BN)
 			mask_j: tl.tensor = off_j < seq_k
 
-			ds: tl.tensor = tl.load(dS + b * stride_sb + h * stride_sh + off_i[:, None] * stride_si + off_j[None, :] * stride_sj, mask = mask_i[:, None] & mask_j[None, :], other = 0.0)
+			ds: tl.tensor = tl.load(dS + b * stride_sb + h * stride_sh + off_i[:, None] * stride_si + off_j[None, :] * stride_sj, mask=mask_i[:, None] & mask_j[None, :], other=0.0)
 
-			k: tl.tensor = tl.load(K + b * stride_kb + h * stride_kh + off_j[:, None] * stride_kj + (d_start + off_d[None, :]) * stride_kd, mask = mask_j[:, None] & mask_d[None, :], other = 0.0)
-			fk: tl.tensor = tl.load(Freqs + b * stride_fb + h * stride_fh + off_j[:, None] * stride_fi + (d_start + off_d[None, :]) * stride_fd, mask = mask_j[:, None] & mask_r[None, :], other = 0.0)
+			k: tl.tensor = tl.load(K + b * stride_kb + h * stride_kh + off_j[:, None] * stride_kj + (d_start + off_d[None, :]) * stride_kd, mask=mask_j[:, None] & mask_d[None, :], other=0.0)
+			fk: tl.tensor = tl.load(Freqs + b * stride_fb + h * stride_fh + off_j[:, None] * stride_fi + (d_start + off_d[None, :]) * stride_fd, mask=mask_j[:, None] & mask_r[None, :], other=0.0)
 
 			act_k: tl.tensor = tl.where(mask_r[None, :], softplus(k), k)
 			th_k: tl.tensor = fk + bias[None, :]
@@ -691,7 +694,7 @@ class PoPESimilarityFunction(torch.autograd.Function):
 				bias.stride(0), bias.stride(1),
 				sim.stride(0), sim.stride(1), sim.stride(2), sim.stride(3),
 				h, seq_q, seq_k, d, rotate_dim,
-				BM = bm, BN = bn, BLOCK_D = blk_d, ALLOW_TF32 = allow_tf32,
+				BM=bm, BN=bn, BLOCK_D=blk_d, ALLOW_TF32=allow_tf32,
 			)
 		else:
 			kernel: Autotuner = get_autotuned_kernel(
@@ -706,7 +709,7 @@ class PoPESimilarityFunction(torch.autograd.Function):
 				bias.stride(0), bias.stride(1),
 				sim.stride(0), sim.stride(1), sim.stride(2), sim.stride(3),
 				h, seq_q, seq_k, d, rotate_dim,
-				BLOCK_D = blk_d, ALLOW_TF32 = allow_tf32,
+				BLOCK_D=blk_d, ALLOW_TF32=allow_tf32,
 			)
 
 		ctx.save_for_backward(q, k, freqs, bias)
@@ -781,7 +784,7 @@ class PoPESimilarityFunction(torch.autograd.Function):
 		# MODE=0: compute dQ
 
 		if _NO_AUTOTUNE:
-			_bwd_kernel_dqk_df[(b * h, triton.cdiv(seq_q, bm))](
+			_bwd_kernel_dqk_df[b * h, triton.cdiv(seq_q, bm)](
 				dq, dk, dfreqs_q, grad_sim, q, k, freqs, bias,
 				dq.stride(0), dq.stride(1), dq.stride(2), dq.stride(3),
 				dk.stride(0), dk.stride(1), dk.stride(2), dk.stride(3),
@@ -792,8 +795,8 @@ class PoPESimilarityFunction(torch.autograd.Function):
 				freqs.stride(0), freqs.stride(1), freqs.stride(2), freqs.stride(3),
 				bias.stride(0), bias.stride(1),
 				h, seq_q, seq_k, d, rotate_dim,
-				BM = bm, BN = bn, BLOCK_D = blk_d,
-				MODE = 0, ALLOW_TF32 = allow_tf32, HAS_DF = has_df,
+				BM=bm, BN=bn, BLOCK_D=blk_d,
+				MODE=0, ALLOW_TF32=allow_tf32, HAS_DF=has_df,
 			)
 		else:
 			grid_q: Callable[[dict[str, int]], tuple[int, int]] = lambda META: (b * h, triton.cdiv(seq_q, META['BM']))
@@ -808,14 +811,14 @@ class PoPESimilarityFunction(torch.autograd.Function):
 				freqs.stride(0), freqs.stride(1), freqs.stride(2), freqs.stride(3),
 				bias.stride(0), bias.stride(1),
 				h, seq_q, seq_k, d, rotate_dim,
-				BLOCK_D = blk_d,
-				MODE = 0, ALLOW_TF32 = allow_tf32, HAS_DF = has_df,
+				BLOCK_D=blk_d,
+				MODE=0, ALLOW_TF32=allow_tf32, HAS_DF=has_df,
 			)
 
 		# MODE=1: compute dK
 
 		if _NO_AUTOTUNE:
-			_bwd_kernel_dqk_df[(b * h, triton.cdiv(seq_k, bn))](
+			_bwd_kernel_dqk_df[b * h, triton.cdiv(seq_k, bn)](
 				dq, dk, dfreqs_k, grad_sim, q, k, freqs, bias,
 				dq.stride(0), dq.stride(1), dq.stride(2), dq.stride(3),
 				dk.stride(0), dk.stride(1), dk.stride(2), dk.stride(3),
@@ -826,8 +829,8 @@ class PoPESimilarityFunction(torch.autograd.Function):
 				freqs.stride(0), freqs.stride(1), freqs.stride(2), freqs.stride(3),
 				bias.stride(0), bias.stride(1),
 				h, seq_q, seq_k, d, rotate_dim,
-				BM = bm, BN = bn, BLOCK_D = blk_d,
-				MODE = 1, ALLOW_TF32 = allow_tf32, HAS_DF = has_df,
+				BM=bm, BN=bn, BLOCK_D=blk_d,
+				MODE=1, ALLOW_TF32=allow_tf32, HAS_DF=has_df,
 			)
 		else:
 			grid_k: Callable[[dict[str, int]], tuple[int, int]] = lambda META: (b * h, triton.cdiv(seq_k, META['BN']))
@@ -842,15 +845,15 @@ class PoPESimilarityFunction(torch.autograd.Function):
 				freqs.stride(0), freqs.stride(1), freqs.stride(2), freqs.stride(3),
 				bias.stride(0), bias.stride(1),
 				h, seq_q, seq_k, d, rotate_dim,
-				BLOCK_D = blk_d,
-				MODE = 1, ALLOW_TF32 = allow_tf32, HAS_DF = has_df,
+				BLOCK_D=blk_d,
+				MODE=1, ALLOW_TF32=allow_tf32, HAS_DF=has_df,
 			)
 
 		# compute dBias
 
 		if exists(dbias):
 			if _NO_AUTOTUNE:
-				_bwd_kernel_dbias[(b * h, triton.cdiv(seq_q, bm))](
+				_bwd_kernel_dbias[b * h, triton.cdiv(seq_q, bm)](
 					dbias, grad_sim, q, k, freqs, bias,
 					grad_sim.stride(0), grad_sim.stride(1), grad_sim.stride(2), grad_sim.stride(3),
 					q.stride(0), q.stride(1), q.stride(2), q.stride(3),
@@ -858,7 +861,7 @@ class PoPESimilarityFunction(torch.autograd.Function):
 					freqs.stride(0), freqs.stride(1), freqs.stride(2), freqs.stride(3),
 					bias.stride(0), bias.stride(1),
 					b, h, seq_q, seq_k, d, rotate_dim,
-					BM = bm, BN = bn, BLOCK_D = blk_d, ALLOW_TF32 = allow_tf32,
+					BM=bm, BN=bn, BLOCK_D=blk_d, ALLOW_TF32=allow_tf32,
 				)
 			else:
 				grid_b: Callable[[dict[str, int]], tuple[int, int]] = lambda META: (b * h, triton.cdiv(seq_q, META['BM']))
@@ -870,7 +873,7 @@ class PoPESimilarityFunction(torch.autograd.Function):
 					freqs.stride(0), freqs.stride(1), freqs.stride(2), freqs.stride(3),
 					bias.stride(0), bias.stride(1),
 					b, h, seq_q, seq_k, d, rotate_dim,
-					BLOCK_D = blk_d, ALLOW_TF32 = allow_tf32,
+					BLOCK_D=blk_d, ALLOW_TF32=allow_tf32,
 				)
 
 		# sum separate dFreqs buffers and reduce to original shape

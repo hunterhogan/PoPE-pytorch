@@ -9,7 +9,7 @@
 # pyright: reportUnknownMemberType=none
 # pyright: reportUnknownVariableType=none
 # pyright: reportUnusedVariable=none
-# ruff: noqa: ERA001, ARG001, E731, FBT001, FBT002
+# ruff: noqa: ERA001, ARG001, E731, FBT001, FBT002 DOC201
 """Access fused Triton FlashAttention kernels for PoPE.
 
 (AI generated docstring)
@@ -43,17 +43,19 @@ References
 
 from __future__ import annotations
 
-from collections.abc import Callable, Hashable, Sequence
 from torch import Tensor
 from torch.autograd import Function
-from torch.autograd.function import FunctionCtx
 from torch_einops_kit import default, exists
-from triton.runtime.autotuner import Autotuner
-from typing import Any
+from typing import Any, TYPE_CHECKING
 import os
 import torch
 import triton
 import triton.language as tl
+
+if TYPE_CHECKING:
+	from collections.abc import Callable, Hashable, Sequence
+	from torch.autograd.function import FunctionCtx
+	from triton.runtime.autotuner import Autotuner
 
 _NO_AUTOTUNE: bool = os.environ.get('POPE_NO_AUTOTUNE', '0') == '1'
 
@@ -97,6 +99,7 @@ def cache_by_id(fn: Callable[..., Autotuner]) -> Callable[..., Autotuner]:
 	signature.
 	"""
 	cache: dict[tuple[int | Hashable, ...], Autotuner] = {}
+
 	def inner(kernel_fn: Hashable, *args: Hashable) -> Autotuner:
 		key: tuple[int | Hashable, ...] = (id(kernel_fn), *args)
 		if key not in cache:
@@ -144,7 +147,7 @@ def get_autotuned_kernel(kernel_fn: triton.JITFunction[Any], configs_fn: Callabl
 	"""
 	configs: list[triton.Config] = configs_fn()
 	configs = _filter_configs(configs, blk_d, elem_bytes, device_idx)
-	return triton.autotune(configs, key = list(keys))(kernel_fn)
+	return triton.autotune(configs, key=list(keys))(kernel_fn)
 
 def _fwd_configs() -> list[triton.Config]:
 	"""I use this to enumerate candidate forward tilings for fused PoPE attention.
@@ -325,7 +328,7 @@ def _fwd_kernel(
 
 	if HAS_POPE:
 		q = _apply_softplus(q, mask_r)
-		fq: tl.tensor = tl.load(Freqs + b * stride_fb + h * stride_fh + (q_off + off_m[:, None]) * stride_fi + off_d[None, :], mask = mask_m[:, None] & mask_r[None, :], other = 0.0).to(tl.float32)
+		fq: tl.tensor = tl.load(Freqs + b * stride_fb + h * stride_fh + (q_off + off_m[:, None]) * stride_fi + off_d[None, :], mask=mask_m[:, None] & mask_r[None, :], other=0.0).to(tl.float32)
 		q_cos, q_sin = _apply_rotations(q, fq, mask_r)
 	else:
 		q_cos: tl.tensor = q
@@ -359,8 +362,8 @@ def _fwd_kernel(
 
 		if HAS_POPE:
 			k = _apply_softplus(k, mask_r)
-			fk: tl.tensor = tl.load(Freqs + b * stride_fb + h * stride_fh + col_n[:, None] * stride_fi + off_d[None, :], mask = cmask[:, None] & mask_r[None, :], other = 0.0)
-			bias: tl.tensor = tl.load(PopeBias + h * stride_pbh + off_d, mask = mask_r, other = 0.0)
+			fk: tl.tensor = tl.load(Freqs + b * stride_fb + h * stride_fh + col_n[:, None] * stride_fi + off_d[None, :], mask=cmask[:, None] & mask_r[None, :], other=0.0)
+			bias: tl.tensor = tl.load(PopeBias + h * stride_pbh + off_d, mask=mask_r, other=0.0)
 			th_k: tl.tensor = (fk + bias[None, :]).to(tl.float32)
 			k_cos, k_sin = _apply_rotations(k, th_k, mask_r)
 			qk: tl.tensor = tl.dot(q_cos, tl.trans(k_cos)) + tl.dot(q_sin, tl.trans(k_sin))
@@ -415,10 +418,10 @@ def _fwd_kernel(
 
 	# normalize and store
 
-	acc /= tl.where(sum_i == 0.0, 1.0, sum_i)[:, None]
+	acc /= tl.where(sum_i == 0.0, 1.0, sum_i)[:, None]  # noqa: RUF069
 
-	tl.store(Out + b * stride_ob + h * stride_oh + off_m[:, None] * stride_om + off_d[None, :], acc.to(Out.dtype.element_ty), mask = mask_m[:, None] & mask_d[None, :])
-	tl.store(Lse + bhid * seqlen_q + off_m, max_i + tl.log(sum_i), mask = mask_m)
+	tl.store(Out + b * stride_ob + h * stride_oh + off_m[:, None] * stride_om + off_d[None, :], acc.to(Out.dtype.element_ty), mask=mask_m[:, None] & mask_d[None, :])
+	tl.store(Lse + bhid * seqlen_q + off_m, max_i + tl.log(sum_i), mask=mask_m)
 
 # backward preprocess - compute delta = rowsum(o * do)
 
@@ -514,15 +517,15 @@ def _bwd_kernel(
 
 	# load k, v for this block
 
-	k: tl.tensor = tl.load(K + b * stride_kb + h * stride_kh + off_n[:, None] * stride_kn + off_d[None, :], mask = mask_n[:, None] & mask_d[None, :], other = 0.0)
-	v: tl.tensor = tl.load(V + b * stride_vb + h * stride_vh + off_n[:, None] * stride_vn + off_d[None, :], mask = mask_n[:, None] & mask_d[None, :], other = 0.0)
+	k: tl.tensor = tl.load(K + b * stride_kb + h * stride_kh + off_n[:, None] * stride_kn + off_d[None, :], mask=mask_n[:, None] & mask_d[None, :], other=0.0)
+	v: tl.tensor = tl.load(V + b * stride_vb + h * stride_vh + off_n[:, None] * stride_vn + off_d[None, :], mask=mask_n[:, None] & mask_d[None, :], other=0.0)
 
 	# apply pope rotary to k
 
 	if HAS_POPE:
 		act_k: tl.tensor = _apply_softplus(k, mask_r)
-		fk: tl.tensor = tl.load(Freqs + b * stride_fb + h * stride_fh + off_n[:, None] * stride_fi + off_d[None, :], mask = mask_n[:, None] & mask_r[None, :], other = 0.0)
-		bias: tl.tensor = tl.load(PopeBias + h * stride_pbh + off_d, mask = mask_r, other = 0.0)
+		fk: tl.tensor = tl.load(Freqs + b * stride_fb + h * stride_fh + off_n[:, None] * stride_fi + off_d[None, :], mask=mask_n[:, None] & mask_r[None, :], other=0.0)
+		bias: tl.tensor = tl.load(PopeBias + h * stride_pbh + off_d, mask=mask_r, other=0.0)
 		th_k: tl.tensor = (fk + bias[None, :]).to(tl.float32)
 		k_cos, k_sin = _apply_rotations(act_k, th_k, mask_r)
 	else:
@@ -542,13 +545,13 @@ def _bwd_kernel(
 		cur_m: tl.tensor = start_m + off_m
 		mask_m: tl.tensor = cur_m < seqlen_q
 
-		q: tl.tensor = tl.load(Q + b * stride_qb + h * stride_qh + cur_m[:, None] * stride_qm + off_d[None, :], mask = mask_m[:, None] & mask_d[None, :], other = 0.0)
+		q: tl.tensor = tl.load(Q + b * stride_qb + h * stride_qh + cur_m[:, None] * stride_qm + off_d[None, :], mask=mask_m[:, None] & mask_d[None, :], other=0.0)
 
 		# recompute attention
 
 		if HAS_POPE:
 			act_q: tl.tensor = _apply_softplus(q, mask_r)
-			fq: tl.tensor = tl.load(Freqs + b * stride_fb + h * stride_fh + (q_off + cur_m[:, None]) * stride_fi + off_d[None, :], mask = mask_m[:, None] & mask_r[None, :], other = 0.0).to(tl.float32)
+			fq: tl.tensor = tl.load(Freqs + b * stride_fb + h * stride_fh + (q_off + cur_m[:, None]) * stride_fi + off_d[None, :], mask=mask_m[:, None] & mask_r[None, :], other=0.0).to(tl.float32)
 			q_cos, q_sin = _apply_rotations(act_q, fq, mask_r)
 			qk: tl.tensor = tl.dot(q_cos, tl.trans(k_cos)) + tl.dot(q_sin, tl.trans(k_sin))
 		else:
@@ -571,7 +574,7 @@ def _bwd_kernel(
 
 		# dv, dp
 
-		do: tl.tensor = tl.load(DO + b * stride_db + h * stride_dh + cur_m[:, None] * stride_dm + off_d[None, :], mask = mask_m[:, None] & mask_d[None, :], other = 0.0)
+		do: tl.tensor = tl.load(DO + b * stride_db + h * stride_dh + cur_m[:, None] * stride_dm + off_d[None, :], mask=mask_m[:, None] & mask_d[None, :], other=0.0)
 
 		if IS_DROPOUT:
 			drop_offset: tl.tensor = (bhid * seqlen_q + cur_m[:, None]) * seqlen_k + off_n[None, :]
@@ -603,23 +606,23 @@ def _bwd_kernel(
 			# dfreqs, dpope_bias via atomic_add
 
 			dfq: tl.tensor = (dqks.to(tl.float32) * q_cos.to(tl.float32) - dqkc.to(tl.float32) * q_sin.to(tl.float32)).to(DFreqs.dtype.element_ty)
-			tl.atomic_add(DFreqs + b * stride_dfb + h * stride_dfh + (q_off + cur_m[:, None]) * stride_dfi + off_d[None, :], dfq, mask = mask_m[:, None] & mask_r[None, :])
+			tl.atomic_add(DFreqs + b * stride_dfb + h * stride_dfh + (q_off + cur_m[:, None]) * stride_dfi + off_d[None, :], dfq, mask=mask_m[:, None] & mask_r[None, :])
 
 			dfk: tl.tensor = (dkks.to(tl.float32) * k_cos.to(tl.float32) - dkkc.to(tl.float32) * k_sin.to(tl.float32)).to(DFreqs.dtype.element_ty)
-			tl.atomic_add(DFreqs + b * stride_dfb + h * stride_dfh + off_n[:, None] * stride_dfi + off_d[None, :], dfk, mask = mask_n[:, None] & mask_r[None, :])
-			tl.atomic_add(DPopeBias + h * stride_pbh + off_d, tl.sum(dfk, 0), mask = mask_r)
+			tl.atomic_add(DFreqs + b * stride_dfb + h * stride_dfh + off_n[:, None] * stride_dfi + off_d[None, :], dfk, mask=mask_n[:, None] & mask_r[None, :])
+			tl.atomic_add(DPopeBias + h * stride_pbh + off_d, tl.sum(dfk, 0), mask=mask_r)
 		else:
 			dq: tl.tensor = tl.dot(ds.to(k.dtype), k)
 			d_k += tl.dot(tl.trans(ds.to(q.dtype)), q)
 
 		# dq via atomic_add (accumulated across k-blocks)
 
-		tl.atomic_add(DQ + b * stride_dqb + h * stride_dqh + cur_m[:, None] * stride_dqm + off_d[None, :], dq.to(DQ.dtype.element_ty), mask = mask_m[:, None] & mask_d[None, :])
+		tl.atomic_add(DQ + b * stride_dqb + h * stride_dqh + cur_m[:, None] * stride_dqm + off_d[None, :], dq.to(DQ.dtype.element_ty), mask=mask_m[:, None] & mask_d[None, :])
 
 	# store dk, dv
 
-	tl.store(DV + b * stride_dvb + h * stride_dvh + off_n[:, None] * stride_dvn + off_d[None, :], d_v.to(DV.dtype.element_ty), mask = mask_n[:, None] & mask_d[None, :])
-	tl.store(DK + b * stride_dkb + h * stride_dkh + off_n[:, None] * stride_dkn + off_d[None, :], d_k.to(DK.dtype.element_ty), mask = mask_n[:, None] & mask_d[None, :])
+	tl.store(DV + b * stride_dvb + h * stride_dvh + off_n[:, None] * stride_dvn + off_d[None, :], d_v.to(DV.dtype.element_ty), mask=mask_n[:, None] & mask_d[None, :])
+	tl.store(DK + b * stride_dkb + h * stride_dkh + off_n[:, None] * stride_dkn + off_d[None, :], d_k.to(DK.dtype.element_ty), mask=mask_n[:, None] & mask_d[None, :])
 
 # wrapper functions
 
@@ -713,8 +716,8 @@ def flash_attn_forward(
 			*m_str,
 			heads, seq_q, seq_k, d, rot, dropout, drop_seed,
 			has_p, causal, exists(mask), dropout > 0.0,
-			BLOCK_HEADDIM = blk_d, BM = bm, BN = bn,
-			num_warps = 4, num_stages = 1,
+			BLOCK_HEADDIM=blk_d, BM=bm, BN=bn,
+			num_warps=4, num_stages=1,
 		)
 	else:
 		kernel: Autotuner = get_autotuned_kernel(_fwd_kernel, _fwd_configs, ('seqlen_q', 'seqlen_k', 'headdim'), blk_d, q.element_size(), q.device.index)
@@ -729,7 +732,7 @@ def flash_attn_forward(
 			*m_str,
 			heads, seq_q, seq_k, d, rot, dropout, drop_seed,
 			has_p, causal, exists(mask), dropout > 0.0,
-			BLOCK_HEADDIM = blk_d,
+			BLOCK_HEADDIM=blk_d,
 		)
 
 	return o, lse
@@ -813,7 +816,7 @@ def flash_attn_backward(
 	delta: Tensor = torch.empty_like(lse)
 	bm_pre: int = 32
 
-	_bwd_preprocess[(triton.cdiv(seq_q, bm_pre), batch * heads)](
+	_bwd_preprocess[triton.cdiv(seq_q, bm_pre), batch * heads](
 		o, do, delta,
 		o.stride(0), o.stride(2), o.stride(1),
 		do.stride(0), do.stride(2), do.stride(1),
@@ -849,8 +852,8 @@ def flash_attn_backward(
 			*df_str, *m_str,
 			heads, seq_q, seq_k, d, rot, dropout, drop_seed,
 			has_p, causal, exists(mask), dropout > 0.0,
-			BLOCK_HEADDIM = blk_d, BM = bm, BN = bn,
-			num_warps = nw, num_stages = 1,
+			BLOCK_HEADDIM=blk_d, BM=bm, BN=bn,
+			num_warps=nw, num_stages=1,
 		)
 	else:
 		kernel: Autotuner = get_autotuned_kernel(_bwd_kernel, _bwd_configs, ('seqlen_q', 'seqlen_k', 'headdim'), blk_d, elem_bytes, dev)
@@ -868,7 +871,7 @@ def flash_attn_backward(
 			*df_str, *m_str,
 			heads, seq_q, seq_k, d, rot, dropout, drop_seed,
 			has_p, causal, exists(mask), dropout > 0.0,
-			BLOCK_HEADDIM = blk_d,
+			BLOCK_HEADDIM=blk_d,
 		)
 
 # autograd wrapper

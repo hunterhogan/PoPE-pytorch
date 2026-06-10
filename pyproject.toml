@@ -1,14 +1,11 @@
 [project]
 name = "PoPE_pytorch"
-version = "0.1.4"
+version = "0.1.5"
 description = "Typed and documented fork of lucidrains/PoPE-pytorch."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "CC-BY-NC-4.0"
-authors = [
-  { name = "Phil Wang", email = "lucidrains@gmail.com" },
-  { name = "Hunter Hogan", email = "HunterHogan@pm.me" }
-]
+authors = [{ name = "Hunter Hogan", email = "HunterHogan@pm.me" }]
 keywords = [
   "artificial intelligence",
   "deep learning",
@@ -40,13 +37,8 @@ Issues = "https://github.com/hunterhogan/PoPE-pytorch/issues"
 Repository = "https://github.com/hunterhogan/PoPE-pytorch"
 
 [dependency-groups]
-dev = [
-  "pytest-cov",
-]
-testing = [
-  "pytest",
-  "pytest-xdist",
-]
+dev = ["pytest-cov"]
+testing = ["pytest", "pytest-xdist"]
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]
@@ -54,4 +46,3 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-name = "PoPE_pytorch"
-

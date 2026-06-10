@@ -1,8 +1,10 @@
 # ruff: noqa: D100
 from __future__ import annotations
 
-from torch import Tensor
-from typing import NamedTuple
+from typing import NamedTuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+	from torch import Tensor
 
 class PolarEmbedReturn(NamedTuple):
 	"""Store PoPE phases and per-head phase biases.
@@ -33,4 +35,3 @@ class PolarEmbedReturn(NamedTuple):
 
 	freqs: Tensor
 	bias: Tensor
-

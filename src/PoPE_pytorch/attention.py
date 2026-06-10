@@ -1,5 +1,4 @@
 # pyright: reportPossiblyUnboundVariable=none
-# ruff: noqa: ERA001
 """Access PoPE-aware similarity and attention helpers.
 
 (AI generated docstring)
@@ -32,12 +31,15 @@ References
 from __future__ import annotations
 
 from einops import rearrange, repeat
-from PoPE_pytorch import PolarEmbedReturn
 from PoPE_pytorch.pope import apply_pope_to_qk
 from torch import Tensor
 from torch_einops_kit import and_masks, default, divisible_by, exists
+from typing import TYPE_CHECKING
 import torch
 import torch.nn.functional as F
+
+if TYPE_CHECKING:
+	from PoPE_pytorch import PolarEmbedReturn
 
 try:
 	from .triton_pope import triton_compute_qk_similarity
@@ -134,7 +136,7 @@ def compute_attn_similarity(
 
 	Raises
 	------
-	AssertionError
+	ValueError
 		Raised when grouped-query attention ratios are invalid or when `head_dim` is unsupported by
 		the Triton kernel family.
 

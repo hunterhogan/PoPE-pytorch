@@ -1,5 +1,5 @@
+# ruff: noqa: DOC501
 # pyright: reportUntypedFunctionDecorator=none
-# ruff: noqa: ERA001
 """Access multi-axis extensions of Polar Coordinate Positional Embedding.
 
 (AI generated docstring)
@@ -29,12 +29,15 @@ from hunterMakesPy import raiseIfNone
 from math import pi
 from PoPE_pytorch import apply_pope_to_qk, PolarEmbedReturn
 from torch import arange, cat, meshgrid, stack, Tensor
-from torch._prims_common import DeviceLikeType
 from torch.amp.autocast_mode import autocast
 from torch.nn import Module, Parameter, ParameterList
-from torch.types import Number
 from torch_einops_kit import exists
+from typing import TYPE_CHECKING
 import torch
+
+if TYPE_CHECKING:
+	from torch._prims_common import DeviceLikeType
+	from torch.types import Number
 
 class AxialPoPE(Module):
 	"""Instantiate multi-axis PoPE embeddings for grid-structured positions.
